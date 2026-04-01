@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+data/raw/
+data/processed/
+neo4j-community-5.26.0/
+neo4j.zip
+*.log

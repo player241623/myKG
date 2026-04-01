@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 课程知识图谱问答系统</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Element Plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- ECharts -->
+    <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+    <!-- Marked (Markdown渲染) -->
+    <script src="https://unpkg.com/marked/marked.min.js"></script>
+    <!-- 图标 -->
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f2f5; }
+        #app { min-height: 100vh; }
+        .app-header {
+            background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+            color: #fff; padding: 16px 32px;
+            display: flex; align-items: center; justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .app-header h1 { font-size: 22px; font-weight: 600; }
+        .app-header .stats { font-size: 13px; opacity: 0.85; }
+        .main-container { display: flex; height: calc(100vh - 60px); }
+        .sidebar {
+            width: 300px; background: #fff; border-right: 1px solid #e0e0e0;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .sidebar-section { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; }
+        .sidebar-section h3 { font-size: 14px; color: #333; margin-bottom: 8px; }
+        .entity-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .entity-tag {
+            display: inline-block; margin: 3px; padding: 4px 10px; border-radius: 12px;
+            font-size: 12px; cursor: pointer; transition: all 0.2s;
+        }
+        .entity-tag:hover { transform: scale(1.05); box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+        .content-area { flex: 1; display: flex; flex-direction: column; }
+        .tab-bar { background: #fff; border-bottom: 1px solid #e0e0e0; }
+        .graph-panel { flex: 1; position: relative; }
+        #graph-container { width: 100%; height: 100%; }
+        .qa-panel {
+            display: flex; flex-direction: column; height: 100%;
+            background: #fafafa;
+        }
+        .chat-messages {
+            flex: 1; overflow-y: auto; padding: 20px;
+        }
+        .message {
+            margin-bottom: 20px; display: flex;
+        }
+        .message.user { justify-content: flex-end; }
+        .message.assistant { justify-content: flex-start; }
+        .message-bubble {
+            max-width: 75%; padding: 14px 18px; border-radius: 12px;
+            font-size: 14px; line-height: 1.7; word-break: break-word;
+        }
+        .message.user .message-bubble {
+            background: #1a73e8; color: #fff; border-bottom-right-radius: 4px;
+        }
+        .message.assistant .message-bubble {
+            background: #fff; color: #333; border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .message-bubble h1, .message-bubble h2, .message-bubble h3 { margin: 12px 0 6px; }
+        .message-bubble h3 { font-size: 15px; }
+        .message-bubble p { margin: 6px 0; }
+        .message-bubble code {
+            background: #f5f5f5; padding: 2px 6px; border-radius: 3px;
+            font-family: 'Consolas', monospace; font-size: 13px; color: #d63384;
+        }
+        .message.assistant .message-bubble code { background: #f0f4f8; }
+        .message-bubble pre {
+            background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;
+            overflow-x: auto; margin: 8px 0;
+        }
+        .message-bubble pre code { background: transparent; color: #d4d4d4; padding: 0; }
+        .message-bubble strong { color: #1a73e8; }
+        .message.assistant .message-bubble strong { color: #1a73e8; }
+        .message-bubble ul, .message-bubble ol { padding-left: 20px; }
+        .message-bubble li { margin: 4px 0; }
+        .knowledge-path {
+            margin-top: 12px; padding: 10px; background: #f8f9fa;
+            border-radius: 8px; border-left: 3px solid #1a73e8;
+        }
+        .knowledge-path .path-node {
+            display: inline-block; padding: 3px 8px; background: #e3f2fd;
+            border-radius: 4px; margin: 2px; font-size: 12px; color: #1565c0;
+        }
+        .knowledge-path .path-arrow { color: #999; margin: 0 4px; font-size: 12px; }
+        .chat-input {
+            padding: 16px 20px; background: #fff;
+            border-top: 1px solid #e0e0e0; display: flex; gap: 10px;
+        }
+        .chat-input .el-input { flex: 1; }
+        .build-panel {
+            padding: 24px; height: 100%; overflow-y: auto; background: #fafafa;
+        }
+        .build-card {
+            background: #fff; border-radius: 12px; padding: 24px;
+            margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .build-card h3 { margin-bottom: 12px; color: #333; font-size: 16px; }
+        .build-card p { color: #666; font-size: 13px; margin-bottom: 12px; }
+        .type-colors { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .type-color-item {
+            padding: 3px 10px; border-radius: 10px; font-size: 11px; color: #fff;
+        }
+        .loading-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8); display: flex;
+            align-items: center; justify-content: center; z-index: 100;
+        }
+        .el-tabs__item { font-size: 15px; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="app-header">
+        <div>
+            <h1>Java 课程知识图谱问答系统</h1>
+            <div class="stats" v-if="graphStats.total_entities > 0">
+                实体: {{ graphStats.total_entities }} | 关系: {{ graphStats.total_relations }}
+            </div>
+        </div>
+        <div>
+            <el-button type="warning" plain size="small" @click="refreshGraph" :loading="loading.graph">
+                刷新图谱
+            </el-button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- 左侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h3>实体搜索</h3>
+                <el-input v-model="searchKeyword" placeholder="搜索知识点..." clearable
+                    @keyup.enter="searchEntities" size="small">
+                    <template #append>
+                        <el-button @click="searchEntities">搜索</el-button>
+                    </template>
+                </el-input>
+            </div>
+            <div class="sidebar-section">
+                <h3>实体类型筛选</h3>
+                <div class="type-colors">
+                    <span v-for="(color, type) in typeColors" :key="type"
+                        class="type-color-item entity-tag"
+                        :style="{background: color, opacity: filterType === type ? 1 : 0.6}"
+                        @click="toggleFilter(type)">
+                        {{ type }}
+                    </span>
+                </div>
+            </div>
+            <div class="entity-list">
+                <h3 style="padding: 8px; font-size: 13px; color: #666;">
+                    {{ filteredEntities.length }} 个实体
+                </h3>
+                <span v-for="e in filteredEntities" :key="e.name"
+                    class="entity-tag"
+                    :style="{background: typeColors[e.type] || '#999', color: '#fff'}"
+                    @click="focusEntity(e.name)"
+                    :title="e.description">
+                    {{ e.name }}
+                </span>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="content-area">
+            <el-tabs v-model="activeTab" class="tab-bar">
+                <el-tab-pane label="知识图谱" name="graph"></el-tab-pane>
+                <el-tab-pane label="智能问答" name="qa"></el-tab-pane>
+                <el-tab-pane label="图谱构建" name="build"></el-tab-pane>
+            </el-tabs>
+
+            <!-- 图谱可视化面板 -->
+            <div class="graph-panel" v-show="activeTab === 'graph'">
+                <div id="graph-container"></div>
+                <div class="loading-overlay" v-if="loading.graph">
+                    <el-text>加载图谱数据中...</el-text>
+                </div>
+            </div>
+
+            <!-- 智能问答面板 -->
+            <div class="qa-panel" v-show="activeTab === 'qa'">
+                <div class="chat-messages" ref="chatMessages">
+                    <div v-if="chatHistory.length === 0" style="text-align:center; padding:60px 20px; color:#999;">
+                        <p style="font-size:48px; margin-bottom:16px;">💡</p>
+                        <p style="font-size:16px; margin-bottom:8px;">基于知识图谱的 Java 智能问答</p>
+                        <p style="font-size:13px;">试试提问: "为什么在多线程环境下需要使用 volatile 关键字？"</p>
+                        <div style="margin-top:20px; display:flex; flex-wrap:wrap; justify-content:center; gap:8px;">
+                            <el-button size="small" v-for="q in sampleQuestions" :key="q"
+                                @click="askSampleQuestion(q)">{{ q }}</el-button>
+                        </div>
+                    </div>
+                    <div v-for="(msg, idx) in chatHistory" :key="idx" class="message" :class="msg.role">
+                        <div class="message-bubble">
+                            <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
+                            <div v-else>{{ msg.content }}</div>
+                            <!-- 知识路径展示 -->
+                            <div v-if="msg.paths && msg.paths.length > 0" class="knowledge-path">
+                                <div style="font-size:12px; color:#666; margin-bottom:6px;">📊 知识路径：</div>
+                                <template v-for="(p, pi) in msg.paths.slice(0, 10)" :key="pi">
+                                    <span class="path-node" @click="focusEntity(p.source)">{{ p.source }}</span>
+                                    <span class="path-arrow">→[{{ p.relation }}]→</span>
+                                    <span class="path-node" @click="focusEntity(p.target)">{{ p.target }}</span>
+                                    <br v-if="pi < msg.paths.length - 1">
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="loading.qa" class="message assistant">
+                        <div class="message-bubble">
+                            <el-text type="info">正在从知识图谱中检索并生成回答...</el-text>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <el-input v-model="question" placeholder="输入你的 Java 编程问题..."
+                        @keyup.enter="askQuestion" :disabled="loading.qa" size="large"></el-input>
+                    <el-button type="primary" @click="askQuestion" :loading="loading.qa" size="large">
+                        发送
+                    </el-button>
+                </div>
+            </div>
+
+            <!-- 图谱构建面板 -->
+            <div class="build-panel" v-show="activeTab === 'build'">
+                <div class="build-card">
+                    <h3>📥 从 Runoob Java 教程自动构建</h3>
+                    <p>自动爬取 runoob.com 的 Java 教程，使用 LLM 抽取知识三元组并入库。</p>
+                    <el-row :gutter="12">
+                        <el-col :span="8">
+                            <el-input-number v-model="crawlPages" :min="1" :max="100" label="页面数" size="small"/>
+                            <span style="font-size:12px; color:#999; margin-left:8px;">页数</span>
+                        </el-col>
+                        <el-col :span="16">
+                            <el-button type="primary" @click="crawlAndBuild" :loading="loading.build">
+                                开始爬取并构建
+                            </el-button>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <div class="build-card">
+                    <h3>📝 从文本手动构建</h3>
+                    <p>粘贴 Java 教学内容，系统将自动抽取知识三元组。</p>
+                    <el-input v-model="buildTitle" placeholder="标题（如：Java多线程编程）"
+                        style="margin-bottom:8px;" size="small"></el-input>
+                    <el-input v-model="buildText" type="textarea" :rows="6"
+                        placeholder="在此粘贴 Java 教学文本..."></el-input>
+                    <el-button type="primary" @click="buildFromText" :loading="loading.build"
+                        style="margin-top:12px;">
+                        提取并入库
+                    </el-button>
+                </div>
+
+                <div class="build-card">
+                    <h3>🔄 知识融合</h3>
+                    <p>对图谱中的实体进行消歧和共指消解，合并同义实体。使用"向量初筛 + LLM终审"策略。</p>
+                    <el-button type="warning" @click="runFusion" :loading="loading.fusion">
+                        执行知识融合
+                    </el-button>
+                </div>
+
+                <div class="build-card">
+                    <h3>➕ 手动添加实体/关系</h3>
+                    <el-row :gutter="12" style="margin-bottom:8px;">
+                        <el-col :span="8">
+                            <el-input v-model="newEntity.name" placeholder="实体名称" size="small"></el-input>
+                        </el-col>
+                        <el-col :span="8">
+                            <el-select v-model="newEntity.type" placeholder="类型" size="small" style="width:100%">
+                                <el-option v-for="t in ontology.entity_types" :key="t" :label="t" :value="t"></el-option>
+                            </el-select>
+                        </el-col>
+                        <el-col :span="8">
+                            <el-button type="success" size="small" @click="addEntity">添加实体</el-button>
+                        </el-col>
+                    </el-row>
+                    <el-input v-model="newEntity.description" placeholder="实体描述"
+                        size="small" style="margin-bottom:12px;"></el-input>
+                    <el-divider></el-divider>
+                    <el-row :gutter="8">
+                        <el-col :span="7">
+                            <el-input v-model="newRelation.head" placeholder="头实体" size="small"></el-input>
+                        </el-col>
+                        <el-col :span="7">
+                            <el-select v-model="newRelation.relation" placeholder="关系" size="small" style="width:100%">
+                                <el-option v-for="r in ontology.relation_types" :key="r" :label="r" :value="r"></el-option>
+                            </el-select>
+                        </el-col>
+                        <el-col :span="7">
+                            <el-input v-model="newRelation.tail" placeholder="尾实体" size="small"></el-input>
+                        </el-col>
+                        <el-col :span="3">
+                            <el-button type="success" size="small" @click="addRelation">添加</el-button>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <div class="build-card" style="background:#fff3f3;">
+                    <h3>⚠️ 危险操作</h3>
+                    <el-popconfirm title="确定要清空整个知识图谱吗？此操作不可恢复！" @confirm="clearGraph">
+                        <template #reference>
+                            <el-button type="danger">清空整个图谱</el-button>
+                        </template>
+                    </el-popconfirm>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
+
+const app = createApp({
+    setup() {
+        // 状态
+        const activeTab = ref('graph');
+        const searchKeyword = ref('');
+        const filterType = ref('');
+        const question = ref('');
+        const chatHistory = ref([]);
+        const chatMessages = ref(null);
+        const loading = reactive({ graph: false, qa: false, build: false, fusion: false });
+        const graphStats = reactive({ total_entities: 0, total_relations: 0, entity_types: {} });
+        const allEntities = ref([]);
+        const allRelations = ref([]);
+        const crawlPages = ref(10);
+        const buildTitle = ref('');
+        const buildText = ref('');
+        const newEntity = reactive({ name: '', type: 'Concept', description: '' });
+        const newRelation = reactive({ head: '', relation: 'DEPENDS_ON', tail: '' });
+        const ontology = reactive({ entity_types: [], relation_types: [] });
+
+        let graphChart = null;
+
+        const typeColors = {
+            'Syntax': '#e74c3c',
+            'Concept': '#3498db',
+            'Interface': '#2ecc71',
+            'Class': '#9b59b6',
+            'Keyword': '#e67e22',
+            'Error': '#e91e63',
+            'Pattern': '#00bcd4',
+            'Library': '#ff9800',
+            'DataStructure': '#4caf50',
+            'Algorithm': '#795548',
+        };
+
+        const sampleQuestions = [
+            'volatile关键字有什么作用？',
+            '什么是Java多态？',
+            'ArrayList和LinkedList区别',
+            'Java异常处理机制',
+            'synchronized和Lock的区别',
+        ];
+
+        // 计算属性
+        const filteredEntities = computed(() => {
+            let list = allEntities.value;
+            if (filterType.value) {
+                list = list.filter(e => e.type === filterType.value);
+            }
+            if (searchKeyword.value) {
+                const kw = searchKeyword.value.toLowerCase();
+                list = list.filter(e =>
+                    e.name.toLowerCase().includes(kw) ||
+                    (e.description || '').toLowerCase().includes(kw)
+                );
+            }
+            return list;
+        });
+
+        // API 调用
+        async function api(url, method = 'GET', data = null) {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (data) opts.body = JSON.stringify(data);
+            const resp = await fetch(url, opts);
+            return await resp.json();
+        }
+
+        // 加载图谱数据
+        async function loadGraphData() {
+            loading.graph = true;
+            try {
+                const [statsResp, entResp, relResp] = await Promise.all([
+                    api('/api/graph/stats'),
+                    api('/api/graph/entities?limit=500'),
+                    api('/api/graph/relations?limit=1000')
+                ]);
+                if (statsResp.code === 0) Object.assign(graphStats, statsResp.data);
+                if (entResp.code === 0) allEntities.value = entResp.data;
+                if (relResp.code === 0) allRelations.value = relResp.data;
+                renderGraph();
+            } catch (e) {
+                console.error('加载图谱数据失败:', e);
+            } finally {
+                loading.graph = false;
+            }
+        }
+
+        // ECharts 图谱渲染
+        function renderGraph() {
+            const container = document.getElementById('graph-container');
+            if (!container) return;
+
+            if (!graphChart) {
+                graphChart = echarts.init(container);
+                window.addEventListener('resize', () => graphChart.resize());
+            }
+
+            const nodes = allEntities.value.map(e => ({
+                id: e.name,
+                name: e.name,
+                category: e.type,
+                symbolSize: Math.max(20, Math.min(50, 20 + (e.name.length * 2))),
+                itemStyle: { color: typeColors[e.type] || '#999' },
+                label: { show: true },
+                value: e.description || ''
+            }));
+
+            const categories = Object.keys(typeColors).map(name => ({ name }));
+
+            const links = allRelations.value.map(r => ({
+                source: r.source,
+                target: r.target,
+                value: r.relation,
+                label: { show: true, formatter: r.relation, fontSize: 10 },
+                lineStyle: { curveness: 0.2 }
+            }));
+
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function(params) {
+                        if (params.dataType === 'node') {
+                            return `<b>${params.name}</b><br/>类型: ${params.data.category}<br/>${params.data.value || ''}`;
+                        }
+                        return `${params.data.source} → ${params.data.value} → ${params.data.target}`;
+                    }
+                },
+                legend: {
+                    data: categories.map(c => c.name),
+                    orient: 'vertical',
+                    right: 10,
+                    top: 20,
+                    textStyle: { fontSize: 12 }
+                },
+                animationDuration: 1000,
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    data: nodes,
+                    links: links,
+                    categories: categories,
+                    roam: true,
+                    draggable: true,
+                    force: {
+                        repulsion: 300,
+                        gravity: 0.1,
+                        edgeLength: [80, 200],
+                        layoutAnimation: true
+                    },
+                    label: {
+                        show: true,
+                        position: 'right',
+                        fontSize: 11,
+                        color: '#333'
+                    },
+                    edgeLabel: {
+                        show: false,
+                        fontSize: 9,
+                        formatter: '{c}'
+                    },
+                    lineStyle: {
+                        opacity: 0.6,
+                        width: 1.5,
+                        curveness: 0.2,
+                        color: '#aaa'
+                    },
+                    emphasis: {
+                        focus: 'adjacency',
+                        lineStyle: { width: 3 },
+                        label: { fontSize: 14 }
+                    }
+                }]
+            };
+
+            graphChart.setOption(option, true);
+
+            // 点击节点事件
+            graphChart.off('click');
+            graphChart.on('click', function(params) {
+                if (params.dataType === 'node') {
+                    focusEntity(params.name);
+                }
+            });
+        }
+
+        function focusEntity(name) {
+            searchKeyword.value = name;
+            if (activeTab.value === 'graph' && graphChart) {
+                graphChart.dispatchAction({
+                    type: 'highlight',
+                    name: name
+                });
+            }
+        }
+
+        function toggleFilter(type) {
+            filterType.value = filterType.value === type ? '' : type;
+        }
+
+        function searchEntities() {
+            // 搜索已在computed中处理
+        }
+
+        async function refreshGraph() {
+            await loadGraphData();
+            ElementPlus.ElMessage.success('图谱已刷新');
+        }
+
+        // 问答
+        async function askQuestion() {
+            if (!question.value.trim()) return;
+            const q = question.value.trim();
+            chatHistory.value.push({ role: 'user', content: q });
+            question.value = '';
+            loading.qa = true;
+            await scrollToBottom();
+
+            try {
+                const resp = await api('/api/qa/ask', 'POST', { question: q });
+                if (resp.code === 0) {
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: resp.data.answer,
+                        paths: resp.data.knowledge_paths || [],
+                        entities: resp.data.matched_entities || []
+                    });
+
+                    // 高亮图谱中匹配的实体
+                    if (resp.data.matched_entities && graphChart) {
+                        resp.data.matched_entities.forEach(name => {
+                            graphChart.dispatchAction({ type: 'highlight', name });
+                        });
+                    }
+                } else {
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: `抱歉，处理问题时出错：${resp.msg}`
+                    });
+                }
+            } catch (e) {
+                chatHistory.value.push({
+                    role: 'assistant',
+                    content: `网络请求失败：${e.message}。请确保后端服务正在运行。`
+                });
+            } finally {
+                loading.qa = false;
+                await scrollToBottom();
+            }
+        }
+
+        function askSampleQuestion(q) {
+            question.value = q;
+            askQuestion();
+        }
+
+        async function scrollToBottom() {
+            await nextTick();
+            if (chatMessages.value) {
+                chatMessages.value.scrollTop = chatMessages.value.scrollHeight;
+            }
+        }
+
+        function renderMarkdown(text) {
+            if (!text) return '';
+            return marked.parse(text);
+        }
+
+        // 图谱构建
+        async function crawlAndBuild() {
+            loading.build = true;
+            try {
+                const resp = await api('/api/build/crawl', 'POST', { max_pages: crawlPages.value });
+                if (resp.code === 0) {
+                    ElementPlus.ElMessage.success(
+                        `构建完成！爬取 ${resp.data.pages_crawled} 页，提取 ${resp.data.triples_extracted} 个三元组`
+                    );
+                    await loadGraphData();
+                } else {
+                    ElementPlus.ElMessage.error(resp.msg);
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('请求失败: ' + e.message);
+            } finally {
+                loading.build = false;
+            }
+        }
+
+        async function buildFromText() {
+            if (!buildText.value.trim()) {
+                ElementPlus.ElMessage.warning('请输入文本内容');
+                return;
+            }
+            loading.build = true;
+            try {
+                const resp = await api('/api/build/text', 'POST', {
+                    title: buildTitle.value || '用户输入',
+                    content: buildText.value
+                });
+                if (resp.code === 0) {
+                    ElementPlus.ElMessage.success(`提取 ${resp.data.triples_extracted} 个三元组`);
+                    buildText.value = '';
+                    buildTitle.value = '';
+                    await loadGraphData();
+                } else {
+                    ElementPlus.ElMessage.error(resp.msg);
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('请求失败: ' + e.message);
+            } finally {
+                loading.build = false;
+            }
+        }
+
+        async function runFusion() {
+            loading.fusion = true;
+            try {
+                const resp = await api('/api/build/fusion', 'POST');
+                if (resp.code === 0) {
+                    const d = resp.data;
+                    ElementPlus.ElMessage.success(
+                        `融合完成：发现 ${d.similar_pairs} 对相似实体，LLM确认 ${d.llm_approved} 对，合并 ${d.merged} 个`
+                    );
+                    await loadGraphData();
+                } else {
+                    ElementPlus.ElMessage.error(resp.msg);
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('请求失败: ' + e.message);
+            } finally {
+                loading.fusion = false;
+            }
+        }
+
+        async function addEntity() {
+            if (!newEntity.name) {
+                ElementPlus.ElMessage.warning('请输入实体名称');
+                return;
+            }
+            const resp = await api('/api/graph/entity', 'POST', {
+                name: newEntity.name,
+                entity_type: newEntity.type,
+                description: newEntity.description
+            });
+            if (resp.code === 0) {
+                ElementPlus.ElMessage.success('实体添加成功');
+                newEntity.name = '';
+                newEntity.description = '';
+                await loadGraphData();
+            } else {
+                ElementPlus.ElMessage.error(resp.msg);
+            }
+        }
+
+        async function addRelation() {
+            if (!newRelation.head || !newRelation.tail) {
+                ElementPlus.ElMessage.warning('请输入头实体和尾实体');
+                return;
+            }
+            const resp = await api('/api/graph/relation', 'POST', newRelation);
+            if (resp.code === 0) {
+                ElementPlus.ElMessage.success('关系添加成功');
+                newRelation.head = '';
+                newRelation.tail = '';
+                await loadGraphData();
+            } else {
+                ElementPlus.ElMessage.error(resp.msg);
+            }
+        }
+
+        async function clearGraph() {
+            const resp = await api('/api/graph/clear', 'POST');
+            if (resp.code === 0) {
+                ElementPlus.ElMessage.success('图谱已清空');
+                await loadGraphData();
+            }
+        }
+
+        // 加载 ontology
+        async function loadOntology() {
+            const resp = await api('/api/ontology');
+            if (resp.code === 0) {
+                ontology.entity_types = resp.data.entity_types;
+                ontology.relation_types = resp.data.relation_types;
+            }
+        }
+
+        // 切换Tab时调整图表大小
+        watch(activeTab, (val) => {
+            if (val === 'graph') {
+                nextTick(() => {
+                    if (graphChart) graphChart.resize();
+                });
+            }
+        });
+
+        onMounted(() => {
+            loadOntology();
+            loadGraphData();
+        });
+
+        return {
+            activeTab, searchKeyword, filterType, question, chatHistory, chatMessages,
+            loading, graphStats, allEntities, allRelations, typeColors,
+            filteredEntities, crawlPages, buildTitle, buildText,
+            newEntity, newRelation, ontology, sampleQuestions,
+            focusEntity, toggleFilter, searchEntities, refreshGraph,
+            askQuestion, askSampleQuestion, renderMarkdown,
+            crawlAndBuild, buildFromText, runFusion,
+            addEntity, addRelation, clearGraph, loadGraphData
+        };
+    }
+});
+
+app.use(ElementPlus);
+for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+    app.component(key, component);
+}
+app.mount('#app');
+</script>
+</body>
+</html>
