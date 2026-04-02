@@ -117,6 +117,10 @@
             align-items: center; justify-content: center; z-index: 100;
         }
         .el-tabs__item { font-size: 15px; }
+        .rv-row-outlier { background: #fff0f0 !important; }
+        .rv-row-highlight { background: #fff8e1 !important; }
+        .el-table .rv-row-outlier td { background: #fff0f0 !important; }
+        .el-table .rv-row-highlight td { background: #fff8e1 !important; }
     </style>
 </head>
 <body>
@@ -177,6 +181,7 @@
             <el-tabs v-model="activeTab" class="tab-bar">
                 <el-tab-pane label="知识图谱" name="graph"></el-tab-pane>
                 <el-tab-pane label="智能问答" name="qa"></el-tab-pane>
+                <el-tab-pane label="抽取审核" name="review"></el-tab-pane>
                 <el-tab-pane label="图谱构建" name="build"></el-tab-pane>
             </el-tabs>
 
@@ -228,6 +233,101 @@
                     <el-button type="primary" @click="askQuestion" :loading="loading.qa" size="large">
                         发送
                     </el-button>
+                </div>
+            </div>
+
+            <!-- 抽取审核面板 -->
+            <div class="review-panel" v-show="activeTab === 'review'" style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <!-- 顶部：输入区 -->
+                <div style="padding:12px 16px; background:#fff; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
+                    <el-row :gutter="12" align="middle">
+                        <el-col :span="4">
+                            <el-input v-model="rv.title" placeholder="标题" size="small"></el-input>
+                        </el-col>
+                        <el-col :span="14">
+                            <el-input v-model="rv.text" placeholder="粘贴Java教学文本，抽取后先审核再入库..." size="small"></el-input>
+                        </el-col>
+                        <el-col :span="3">
+                            <el-button type="primary" size="small" @click="rvExtract" :loading="rv.loading">
+                                抽取并分析
+                            </el-button>
+                        </el-col>
+                        <el-col :span="3" v-if="rv.sessionId">
+                            <el-popconfirm title="确认将审核后的数据写入Neo4j？" @confirm="rvCommit">
+                                <template #reference>
+                                    <el-button type="success" size="small" :disabled="rv.triples.length===0">
+                                        确认入库 ({{ rv.triples.length }})
+                                    </el-button>
+                                </template>
+                            </el-popconfirm>
+                        </el-col>
+                    </el-row>
+                    <!-- 统计信息 + 批量操作 -->
+                    <div v-if="rv.sessionId" style="margin-top:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                        <el-tag size="small">实体 {{ rv.stats.entities }}</el-tag>
+                        <el-tag size="small" type="info">三元组 {{ rv.triples.length }}</el-tag>
+                        <el-tag size="small" type="success">聚类 {{ rv.stats.clusters }}</el-tag>
+                        <el-tag size="small" type="danger">离群 {{ rv.outlierNames.length }}</el-tag>
+                        <el-tag size="small" type="warning">可合并 {{ rv.mergeCandidates.length }} 对</el-tag>
+                        <div style="flex:1;"></div>
+                        <el-button size="small" type="danger" plain @click="rvRemoveAllNoise"
+                            :disabled="rv.outlierNames.length===0">
+                            一键删除噪声 ({{ rv.outlierNames.length }})
+                        </el-button>
+                        <el-button size="small" type="warning" plain @click="rvMergeAll"
+                            :disabled="rv.mergeCandidates.length===0">
+                            一键合并相似 ({{ rv.mergeCandidates.length }})
+                        </el-button>
+                    </div>
+                </div>
+
+                <!-- 中部：散点图 -->
+                <div style="height:340px; flex-shrink:0; position:relative; border-bottom:1px solid #e0e0e0;">
+                    <div id="review-scatter" style="width:100%; height:100%;"></div>
+                    <div v-if="!rv.sessionId" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#bbb; font-size:14px;">
+                        输入文本并点击"抽取并分析"，实体将以散点图展示，聚类分组 + 离群点标红
+                    </div>
+                </div>
+
+                <!-- 下部：三元组表格 -->
+                <div style="flex:1; overflow:auto; padding:0;">
+                    <el-table :data="rvFilteredTriples" stripe size="small" style="width:100%;"
+                        highlight-current-row :row-class-name="rvRowClass"
+                        @selection-change="rvSelectionChange" ref="rvTable" max-height="100%">
+                        <el-table-column type="selection" width="40"></el-table-column>
+                        <el-table-column prop="_id" label="ID" width="50"></el-table-column>
+                        <el-table-column prop="head" label="头实体" width="160">
+                            <template #default="{ row }">
+                                <span :style="{color: rvIsOutlier(row.head) ? '#e74c3c' : '#333', fontWeight: rvIsHighlighted(row.head) ? 'bold' : 'normal', background: rvIsHighlighted(row.head) ? '#fff3cd' : 'transparent', padding: '1px 4px', borderRadius: '3px'}">{{ row.head }}</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="head_type" label="类型" width="100">
+                            <template #default="{ row }">
+                                <el-tag size="small" :color="typeColors[row.head_type]" effect="dark" style="border:0;">{{ row.head_type }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="relation" label="关系" width="130">
+                            <template #default="{ row }">
+                                <el-tag size="small" type="info">{{ row.relation }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="tail" label="尾实体" width="160">
+                            <template #default="{ row }">
+                                <span :style="{color: rvIsOutlier(row.tail) ? '#e74c3c' : '#333', fontWeight: rvIsHighlighted(row.tail) ? 'bold' : 'normal', background: rvIsHighlighted(row.tail) ? '#fff3cd' : 'transparent', padding: '1px 4px', borderRadius: '3px'}">{{ row.tail }}</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="tail_type" label="类型" width="100">
+                            <template #default="{ row }">
+                                <el-tag size="small" :color="typeColors[row.tail_type]" effect="dark" style="border:0;">{{ row.tail_type }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="head_desc" label="头实体描述" min-width="150" show-overflow-tooltip></el-table-column>
+                        <el-table-column label="操作" width="70" fixed="right">
+                            <template #default="{ row }">
+                                <el-button link type="danger" size="small" @click="rvDeleteTriple(row._id)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
                 </div>
             </div>
 
@@ -343,6 +443,22 @@ const app = createApp({
         const ontology = reactive({ entity_types: [], relation_types: [] });
 
         let graphChart = null;
+        let reviewChart = null;
+
+        // ===== 审核面板状态 =====
+        const rv = reactive({
+            title: '', text: '', loading: false,
+            sessionId: null,
+            triples: [],
+            scatter: [],
+            outlierNames: [],
+            mergeCandidates: [],
+            stats: { entities: 0, clusters: 0 },
+            highlightedEntities: new Set(),  // 图表点击/框选高亮的实体
+            selectedRows: [],
+            filterEntities: null,  // 框选筛选
+        });
+        const rvTable = ref(null);
 
         const typeColors = {
             'Syntax': '#e74c3c',
@@ -699,6 +815,240 @@ const app = createApp({
             }
         }
 
+        // ===== 审核面板方法 =====
+
+        const rvFilteredTriples = computed(() => {
+            if (rv.filterEntities && rv.filterEntities.size > 0) {
+                return rv.triples.filter(t =>
+                    rv.filterEntities.has(t.head) || rv.filterEntities.has(t.tail)
+                );
+            }
+            return rv.triples;
+        });
+
+        function rvIsOutlier(name) { return rv.outlierNames.includes(name); }
+        function rvIsHighlighted(name) { return rv.highlightedEntities.has(name); }
+        function rvRowClass({ row }) {
+            if (rvIsOutlier(row.head) || rvIsOutlier(row.tail)) return 'rv-row-outlier';
+            if (rvIsHighlighted(row.head) || rvIsHighlighted(row.tail)) return 'rv-row-highlight';
+            return '';
+        }
+        function rvSelectionChange(rows) { rv.selectedRows = rows; }
+
+        async function rvExtract() {
+            if (!rv.text.trim()) { ElementPlus.ElMessage.warning('请输入文本'); return; }
+            rv.loading = true;
+            try {
+                const resp = await api('/api/review/extract', 'POST', {
+                    title: rv.title || '用户输入', content: rv.text
+                });
+                if (resp.code === 0) {
+                    const d = resp.data;
+                    rv.sessionId = d.session_id;
+                    rv.triples = d.triples;
+                    rv.scatter = d.scatter;
+                    rv.outlierNames = d.outlier_names || [];
+                    rv.mergeCandidates = d.merge_candidates || [];
+                    rv.stats.entities = d.total_entities;
+                    rv.stats.clusters = d.num_clusters;
+                    rv.highlightedEntities = new Set();
+                    rv.filterEntities = null;
+                    await nextTick();
+                    renderReviewScatter();
+                    ElementPlus.ElMessage.success(`抽取完成: ${d.total_triples}条三元组, ${d.total_entities}个实体, ${d.num_outliers}个离群`);
+                } else {
+                    ElementPlus.ElMessage.error(resp.msg);
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('请求失败: ' + e.message);
+            } finally { rv.loading = false; }
+        }
+
+        function renderReviewScatter() {
+            const container = document.getElementById('review-scatter');
+            if (!container) return;
+            if (!reviewChart) {
+                reviewChart = echarts.init(container);
+                window.addEventListener('resize', () => { if (reviewChart) reviewChart.resize(); });
+            }
+
+            // 按聚类分组
+            const clusterMap = {};
+            const outlierData = [];
+            rv.scatter.forEach(p => {
+                if (p.is_outlier) {
+                    outlierData.push(p);
+                } else {
+                    const key = 'Cluster ' + p.cluster;
+                    if (!clusterMap[key]) clusterMap[key] = [];
+                    clusterMap[key].push(p);
+                }
+            });
+
+            const clusterColors = ['#3498db','#2ecc71','#9b59b6','#f39c12','#1abc9c','#e67e22','#00bcd4','#8bc34a','#ff5722','#607d8b'];
+            const series = [];
+            let ci = 0;
+            for (const [name, points] of Object.entries(clusterMap)) {
+                series.push({
+                    name, type: 'scatter', data: points.map(p => ({
+                        value: [p.x, p.y], name: p.name, itemData: p
+                    })),
+                    symbolSize: 14,
+                    itemStyle: { color: clusterColors[ci % clusterColors.length] },
+                    label: { show: true, formatter: '{@[2]}', position: 'right', fontSize: 11,
+                        rich: {} },
+                    encode: { tooltip: [0, 1] },
+                });
+                ci++;
+            }
+            // 离群点系列（红色 + 大三角）
+            if (outlierData.length > 0) {
+                series.push({
+                    name: '离群/噪声', type: 'scatter',
+                    data: outlierData.map(p => ({ value: [p.x, p.y], name: p.name, itemData: p })),
+                    symbolSize: 18, symbol: 'triangle',
+                    itemStyle: { color: '#e74c3c', borderColor: '#c0392b', borderWidth: 2 },
+                    label: { show: true, formatter: '{@[2]}', position: 'right', fontSize: 11, color: '#e74c3c' },
+                });
+            }
+
+            // 为每个数据点的 label 手动设置 name
+            series.forEach(s => {
+                if (s.data) {
+                    s.data.forEach(d => {
+                        d.label = { formatter: d.name };
+                    });
+                }
+            });
+
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: p => {
+                        const d = p.data.itemData || {};
+                        return `<b>${p.name}</b><br/>类型: ${d.type||''}<br/>簇: ${d.is_outlier ? '离群' : d.cluster}<br/>${d.desc||''}`;
+                    }
+                },
+                legend: { top: 8, right: 10 },
+                toolbox: {
+                    feature: {
+                        brush: { title: { rect: '框选区域', clear: '清除框选' } }
+                    }, right: 120, top: 4
+                },
+                brush: {
+                    toolbox: ['rect', 'clear'],
+                    xAxisIndex: 0, yAxisIndex: 0,
+                    brushStyle: { borderWidth: 1, color: 'rgba(26,115,232,0.12)', borderColor: '#1a73e8' }
+                },
+                xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } },
+                yAxis: { type: 'value', axisLabel: { show: false }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } },
+                series
+            };
+            reviewChart.setOption(option, true);
+
+            // 点击散点 → 高亮表格
+            reviewChart.off('click');
+            reviewChart.on('click', function(params) {
+                if (params.componentType === 'series' && params.name) {
+                    const name = params.name;
+                    rv.filterEntities = null;
+                    const newSet = new Set(rv.highlightedEntities);
+                    if (newSet.has(name)) newSet.delete(name); else newSet.add(name);
+                    rv.highlightedEntities = newSet;
+                }
+            });
+
+            // 框选事件 → 筛选表格
+            reviewChart.off('brushSelected');
+            reviewChart.on('brushSelected', function(params) {
+                const selected = new Set();
+                if (params.batch && params.batch.length > 0) {
+                    params.batch.forEach(batch => {
+                        batch.selected.forEach(sel => {
+                            sel.dataIndex.forEach(idx => {
+                                const s = series[sel.seriesIndex];
+                                if (s && s.data && s.data[idx]) {
+                                    selected.add(s.data[idx].name);
+                                }
+                            });
+                        });
+                    });
+                }
+                if (selected.size > 0) {
+                    rv.filterEntities = selected;
+                    rv.highlightedEntities = selected;
+                } else {
+                    rv.filterEntities = null;
+                }
+            });
+        }
+
+        async function rvRemoveAllNoise() {
+            if (!rv.sessionId || rv.outlierNames.length === 0) return;
+            const resp = await api('/api/review/remove_noise', 'POST', {
+                session_id: rv.sessionId, entity_names: [...rv.outlierNames]
+            });
+            if (resp.code === 0) {
+                // 从前端同步删除
+                const removeSet = new Set(rv.outlierNames);
+                rv.triples = rv.triples.filter(t => !removeSet.has(t.head) && !removeSet.has(t.tail));
+                rv.scatter = rv.scatter.filter(s => !removeSet.has(s.name));
+                rv.outlierNames = [];
+                rv.stats.entities = rv.scatter.length;
+                renderReviewScatter();
+                ElementPlus.ElMessage.success(`已删除 ${resp.data.removed_triples} 条噪声三元组`);
+            }
+        }
+
+        async function rvMergeAll() {
+            if (!rv.sessionId || rv.mergeCandidates.length === 0) return;
+            let merged = 0;
+            for (const pair of rv.mergeCandidates) {
+                // 保留名字更短的那个作为规范名
+                const keep = pair.entity_a.length <= pair.entity_b.length ? pair.entity_a : pair.entity_b;
+                const remove = keep === pair.entity_a ? pair.entity_b : pair.entity_a;
+                const resp = await api('/api/review/merge', 'POST', {
+                    session_id: rv.sessionId, keep, remove
+                });
+                if (resp.code === 0) {
+                    // 前端同步
+                    rv.triples.forEach(t => {
+                        if (t.head === remove) t.head = keep;
+                        if (t.tail === remove) t.tail = keep;
+                    });
+                    rv.scatter = rv.scatter.filter(s => s.name !== remove);
+                    merged++;
+                }
+            }
+            rv.mergeCandidates = [];
+            rv.stats.entities = rv.scatter.length;
+            renderReviewScatter();
+            ElementPlus.ElMessage.success(`已合并 ${merged} 对相似实体`);
+        }
+
+        async function rvDeleteTriple(id) {
+            const resp = await api('/api/review/delete_triples', 'POST', {
+                session_id: rv.sessionId, triple_ids: [id]
+            });
+            if (resp.code === 0) {
+                rv.triples = rv.triples.filter(t => t._id !== id);
+            }
+        }
+
+        async function rvCommit() {
+            const resp = await api('/api/review/commit', 'POST', { session_id: rv.sessionId });
+            if (resp.code === 0) {
+                ElementPlus.ElMessage.success(`已写入 ${resp.data.committed_triples} 条三元组到 Neo4j`);
+                rv.sessionId = null; rv.triples = []; rv.scatter = [];
+                rv.outlierNames = []; rv.mergeCandidates = [];
+                rv.text = ''; rv.title = '';
+                if (reviewChart) reviewChart.clear();
+                await loadGraphData();
+            } else {
+                ElementPlus.ElMessage.error(resp.msg);
+            }
+        }
+
         // 加载 ontology
         async function loadOntology() {
             const resp = await api('/api/ontology');
@@ -711,9 +1061,10 @@ const app = createApp({
         // 切换Tab时调整图表大小
         watch(activeTab, (val) => {
             if (val === 'graph') {
-                nextTick(() => {
-                    if (graphChart) graphChart.resize();
-                });
+                nextTick(() => { if (graphChart) graphChart.resize(); });
+            }
+            if (val === 'review') {
+                nextTick(() => { if (reviewChart) reviewChart.resize(); });
             }
         });
 
@@ -730,7 +1081,11 @@ const app = createApp({
             focusEntity, toggleFilter, searchEntities, refreshGraph,
             askQuestion, askSampleQuestion, renderMarkdown,
             crawlAndBuild, buildFromText, runFusion,
-            addEntity, addRelation, clearGraph, loadGraphData
+            addEntity, addRelation, clearGraph, loadGraphData,
+            // 审核面板
+            rv, rvTable, rvFilteredTriples,
+            rvExtract, rvRemoveAllNoise, rvMergeAll, rvDeleteTriple, rvCommit,
+            rvIsOutlier, rvIsHighlighted, rvRowClass, rvSelectionChange,
         };
     }
 });

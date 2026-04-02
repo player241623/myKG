@@ -15,10 +15,12 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 
 # Embedding 模型配置
-EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", LLM_API_KEY)
-EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", LLM_BASE_URL)
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIM = 1536  # text-embedding-3-small 维度
+# 默认使用硅基流动（SiliconFlow）的免费 bge-m3 模型，国内直连
+# 注册即送额度：https://siliconflow.cn  免费模型无需额外充值
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", os.getenv("SILICONFLOW_API_KEY", LLM_API_KEY))
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "https://api.siliconflow.cn/v1")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+EMBEDDING_DIM = 1024  # bge-m3 维度
 
 # ============ Neo4j 配置 ============
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
