@@ -10,25 +10,25 @@ load_dotenv()
 
 # ============ LLM 配置 ============
 # 支持 OpenAI 兼容接口（如 DeepSeek、ChatGLM、Moonshot 等）
-LLM_API_KEY = os.getenv("LLM_API_KEY", "your-api-key-here")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "sk-eee7d1bd87c94151895da6fa4e752379")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
 
 # Embedding 模型配置
-# 默认使用硅基流动（SiliconFlow）的免费 bge-m3 模型，国内直连
-# 注册即送额度：https://siliconflow.cn  免费模型无需额外充值
-EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", os.getenv("SILICONFLOW_API_KEY", LLM_API_KEY))
+# 默认使用硅基流动（SiliconFlow）的bge-m3 模型，国内直连
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY","sk-qnskoarkfotwhxqexizthvcwloeihnthmyvitniavdjrutky")
 EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "https://api.siliconflow.cn/v1")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DIM = 1024  # bge-m3 维度
 
+
 # ============ Neo4j 配置 ============
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "20040907")
 
 # ============ 知识图谱 Ontology 定义 ============
-# 根据开题报告，定义Java课程的实体类型和关系类型
+# 定义Java课程的实体类型和关系类型
 ONTOLOGY = {
     "entity_types": [
         "Syntax",       # 语法实体：变量、函数、数组、循环、条件等
