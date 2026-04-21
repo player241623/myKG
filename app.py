@@ -9,8 +9,9 @@ from flask_cors import CORS
 from neo4j_client import Neo4jClient
 from kg_extractor import build_kg_from_texts, extract_triples_from_text
 from kg_fusion import run_knowledge_fusion
-from kg_review import (extract_for_review, remove_noise, merge_entities_in_session,
-                       delete_triples_in_session, commit_to_neo4j, get_session)
+from kg_review import (extract_for_review, merge_entities_in_session,
+                       update_triple_checked, batch_set_checked,
+                       commit_to_neo4j, get_session)
 from graphrag_qa import answer_question
 from data_crawler import crawl_java_tutorials, load_local_tutorials, load_custom_text
 from config import FLASK_HOST, FLASK_PORT, FLASK_DEBUG, ONTOLOGY
@@ -245,7 +246,7 @@ def run_fusion():
 
 @app.route("/api/review/extract", methods=["POST"])
 def review_extract():
-    """仅抽取不入库，返回三元组+散点聚类数据供审核"""
+    """抽取三元组并标记与已有库的重复，不入库"""
     try:
         data = request.json
         title = data.get("title", "用户输入")
@@ -268,12 +269,25 @@ def review_session(session_id):
     return jsonify({"code": -1, "msg": "会话不存在或已过期"})
 
 
-@app.route("/api/review/remove_noise", methods=["POST"])
-def review_remove_noise():
-    """删除离群噪声实体及关联三元组"""
+@app.route("/api/review/check", methods=["POST"])
+def review_check():
+    """切换单条三元组的勾选状态"""
     try:
         data = request.json
-        result = remove_noise(data["session_id"], data["entity_names"])
+        result = update_triple_checked(data["session_id"], data["triple_id"], data["checked"])
+        if "error" in result:
+            return jsonify({"code": -1, "msg": result["error"]})
+        return jsonify({"code": 0})
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e)})
+
+
+@app.route("/api/review/batch_check", methods=["POST"])
+def review_batch_check():
+    """批量设置勾选状态（一键取消/勾选重复项）"""
+    try:
+        data = request.json
+        result = batch_set_checked(data["session_id"], data["triple_ids"], data["checked"])
         if "error" in result:
             return jsonify({"code": -1, "msg": result["error"]})
         return jsonify({"code": 0, "data": result})
@@ -294,22 +308,9 @@ def review_merge():
         return jsonify({"code": -1, "msg": str(e)})
 
 
-@app.route("/api/review/delete_triples", methods=["POST"])
-def review_delete_triples():
-    """删除指定三元组"""
-    try:
-        data = request.json
-        result = delete_triples_in_session(data["session_id"], data["triple_ids"])
-        if "error" in result:
-            return jsonify({"code": -1, "msg": result["error"]})
-        return jsonify({"code": 0, "data": result})
-    except Exception as e:
-        return jsonify({"code": -1, "msg": str(e)})
-
-
 @app.route("/api/review/commit", methods=["POST"])
 def review_commit():
-    """确认审核结果，批量写入 Neo4j"""
+    """只入库勾选的三元组，并持久化向量"""
     try:
         data = request.json
         result = commit_to_neo4j(data["session_id"], get_neo4j())
